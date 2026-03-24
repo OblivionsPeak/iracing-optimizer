@@ -278,8 +278,8 @@ class LiveSessionOptimizer:
                 if _is_live_session(ir):
                     return {
                         "session_type": _get_session_type(ir),
-                        "track": ir.get("TrackDisplayName") or ir.get("TrackName") or "Unknown",
-                        "car": ir.get("PlayerCarTeamName") or "Unknown",
+                        "track": ir["TrackDisplayName"] or ir["TrackName"] or "Unknown",
+                        "car": ir["PlayerCarTeamName"] or "Unknown",
                     }
                 time.sleep(SESSION_CHECK_INTERVAL)
         finally:
