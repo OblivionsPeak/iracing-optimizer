@@ -23,8 +23,43 @@ from .fps_sampler import FPSSampler
 from .process_controller import ProcessController
 
 VALID_LIVE_TYPES: frozenset[str] = frozenset(
-    {"practice", "race", "qualify", "open practice", "open qualify"}
+    {"practice", "race", "qualify", "open practice", "open qualify",
+     "lone qualify", "offline testing", "time trial"}
 )
+
+
+def _get_session_type(ir) -> str:
+    """
+    Safely retrieve the current session type from irsdk.
+    ir['SessionType'] is NOT a direct telemetry variable — it returns None.
+    The correct source is ir['SessionInfo']['Sessions'][session_num]['SessionType'].
+    Falls back to empty string on any error.
+    """
+    try:
+        # Try direct telemetry first (works in some pyirsdk versions)
+        val = ir["SessionType"]
+        if val:
+            return str(val).lower().strip()
+    except Exception:
+        pass
+    try:
+        session_num = ir["SessionNum"] or 0
+        sessions = ir["SessionInfo"]["Sessions"]
+        return str(sessions[session_num]["SessionType"]).lower().strip()
+    except Exception:
+        return ""
+
+
+def _is_live_session(ir) -> bool:
+    """Return True if iRacing is connected, not in replay, and in a valid live session."""
+    try:
+        if not ir.is_connected:
+            return False
+        if ir["IsReplayPlaying"]:
+            return False
+        return _get_session_type(ir) in VALID_LIVE_TYPES
+    except Exception:
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -254,13 +289,10 @@ class LiveCalibrator:
                         except Exception:
                             pass
 
-                    if ir.is_connected:
-                        is_replay = ir["IsReplayPlaying"]
-                        session_t = (ir["SessionType"] or "").lower().strip()
-                        if (not is_replay) and session_t in VALID_LIVE_TYPES:
-                            detected = True
-                            session_type = ir["SessionType"] or ""
-                            break
+                    if _is_live_session(ir):
+                        detected = True
+                        session_type = _get_session_type(ir)
+                        break
                 except Exception:
                     pass
 

@@ -15,7 +15,32 @@ from .config_manager import ConfigManager
 from .settings import SETTINGS, SETTINGS_BY_KEY
 
 
-VALID_LIVE_TYPES = {'practice', 'race', 'qualify', 'open practice', 'open qualify'}
+VALID_LIVE_TYPES = {
+    'practice', 'race', 'qualify', 'open practice', 'open qualify',
+    'lone qualify', 'offline testing', 'time trial'
+}
+
+
+def _get_session_type(ir) -> str:
+    """Safely get session type — ir['SessionType'] returns None; use SessionInfo instead."""
+    try:
+        val = ir["SessionType"]
+        if val:
+            return str(val).lower().strip()
+    except Exception:
+        pass
+    try:
+        session_num = ir["SessionNum"] or 0
+        return str(ir["SessionInfo"]["Sessions"][session_num]["SessionType"]).lower().strip()
+    except Exception:
+        return ""
+
+
+def _is_live_session(ir) -> bool:
+    try:
+        return ir.is_connected and not ir["IsReplayPlaying"] and _get_session_type(ir) in VALID_LIVE_TYPES
+    except Exception:
+        return False
 SESSION_CHECK_INTERVAL = 2.0
 POLL_INTERVAL = 0.1
 PROGRESS_INTERVAL = 10.0
@@ -250,15 +275,12 @@ class LiveSessionOptimizer:
         try:
             while time.time() < deadline and not self._stop_event.is_set():
                 ir.startup()
-                if ir.is_connected:
-                    is_replay = ir["IsReplayPlaying"]
-                    session_type = (ir["SessionType"] or "").lower()
-                    if not is_replay and session_type in VALID_LIVE_TYPES:
-                        return {
-                            "session_type": session_type,
-                            "track": ir.get("TrackDisplayName") or ir.get("TrackName") or "Unknown",
-                            "car": ir.get("PlayerCarTeamName") or "Unknown",
-                        }
+                if _is_live_session(ir):
+                    return {
+                        "session_type": _get_session_type(ir),
+                        "track": ir.get("TrackDisplayName") or ir.get("TrackName") or "Unknown",
+                        "car": ir.get("PlayerCarTeamName") or "Unknown",
+                    }
                 time.sleep(SESSION_CHECK_INTERVAL)
         finally:
             try:
@@ -289,9 +311,7 @@ class LiveSessionOptimizer:
             while not self._stop_event.is_set():
                 if not ir.is_connected:
                     break
-                is_replay = ir["IsReplayPlaying"]
-                session_type = (ir["SessionType"] or "").lower()
-                if is_replay or session_type not in VALID_LIVE_TYPES:
+                if not _is_live_session(ir):
                     break
 
                 fps = ir["FrameRate"]
