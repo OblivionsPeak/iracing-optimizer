@@ -10,8 +10,42 @@ try:
 except ImportError:
     raise ImportError("psutil is required: pip install psutil")
 
-IRACING_EXE_NAME = "iRacingSim64DX11.exe"
-IRACING_PROCESS_NAME = "iRacingSim64DX11"
+IRACING_SIM_EXE   = "iRacingSim64DX11.exe"
+IRACING_UI_EXE    = "iRacingUI.exe"
+# Both process names to detect "iRacing is running"
+IRACING_PROCESS_NAMES = {IRACING_SIM_EXE, IRACING_UI_EXE}
+
+# Registry keys to search (newest installations use HKCU)
+_REGISTRY_SEARCHES = [
+    (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\iRacing.com\iRacing"),
+    (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\iRacing.com\iRacing"),
+    (winreg.HKEY_CURRENT_USER,  r"SOFTWARE\iRacing.com\iRacing"),
+]
+
+_FALLBACK_DIRS = [
+    Path(r"C:\Program Files\iRacing"),
+    Path(r"C:\Program Files (x86)\iRacing"),
+]
+
+
+def _find_install_dir() -> Optional[Path]:
+    """Return the iRacing install directory from registry or common paths."""
+    for hive, subkey in _REGISTRY_SEARCHES:
+        try:
+            key = winreg.OpenKey(hive, subkey)
+            install_path, _ = winreg.QueryValueEx(key, "InstallPath")
+            winreg.CloseKey(key)
+            p = Path(install_path)
+            if p.exists():
+                return p
+        except (FileNotFoundError, OSError):
+            pass
+
+    for d in _FALLBACK_DIRS:
+        if d.exists():
+            return d
+
+    return None
 
 
 class ProcessController:
@@ -21,42 +55,33 @@ class ProcessController:
 
     def find_iracing_exe(self) -> Path:
         """
-        Find iRacingSim64DX11.exe.
-        Strategy:
-        1. Check registry: HKLM\\SOFTWARE\\WOW6432Node\\iRacing.com\\iRacing -> InstallPath
-        2. Fall back to: C:\\Program Files\\iRacing\\iRacingSim64DX11.exe
-        3. Fall back to: C:\\Program Files (x86)\\iRacing\\iRacingSim64DX11.exe
-        Raises FileNotFoundError if not found anywhere.
+        Find iRacingSim64DX11.exe for replay launching.
+        Falls back to iRacingUI.exe if the sim exe is not present
+        (though replay loading requires the sim exe).
+        Raises FileNotFoundError if neither is found.
         """
-        # 1. Registry lookup
-        try:
-            key = winreg.OpenKey(
-                winreg.HKEY_LOCAL_MACHINE,
-                r"SOFTWARE\WOW6432Node\iRacing.com\iRacing",
-            )
-            install_path, _ = winreg.QueryValueEx(key, "InstallPath")
-            winreg.CloseKey(key)
-            exe = Path(install_path) / IRACING_EXE_NAME
-            if exe.exists():
-                return exe
-        except (FileNotFoundError, OSError, Exception):
-            pass
+        install_dir = _find_install_dir()
 
-        # 2. Default Program Files locations
-        fallback_dirs = [
-            Path(r"C:\Program Files\iRacing"),
-            Path(r"C:\Program Files (x86)\iRacing"),
-        ]
-        for directory in fallback_dirs:
-            exe = directory / IRACING_EXE_NAME
-            if exe.exists():
-                return exe
+        if install_dir:
+            sim_exe = install_dir / IRACING_SIM_EXE
+            if sim_exe.exists():
+                return sim_exe
+            # iRacingUI.exe present but not the sim exe — likely installer-only state
+            ui_exe = install_dir / IRACING_UI_EXE
+            if ui_exe.exists():
+                raise FileNotFoundError(
+                    f"Found iRacingUI.exe at {install_dir} but not {IRACING_SIM_EXE}. "
+                    "Launch iRacing at least once and let it finish updating before using this tool."
+                )
 
         raise FileNotFoundError(
-            f"Could not find {IRACING_EXE_NAME}. "
-            "Verify iRacing is installed or set the registry key "
-            r"HKLM\SOFTWARE\WOW6432Node\iRacing.com\iRacing -> InstallPath."
+            f"Could not find {IRACING_SIM_EXE}. "
+            "Verify iRacing is installed. Searched registry and common install paths."
         )
+
+    def find_install_dir(self) -> Optional[Path]:
+        """Public accessor for the install directory (used by UI to display path)."""
+        return _find_install_dir()
 
     def find_replay_files(self) -> list[Path]:
         """
@@ -73,10 +98,10 @@ class ProcessController:
         return rpy_files
 
     def is_iracing_running(self) -> bool:
-        """Check if iRacingSim64DX11 process is currently running using psutil."""
+        """Check if any iRacing process is running (iRacingUI.exe or iRacingSim64DX11.exe)."""
         for proc in psutil.process_iter(["name"]):
             try:
-                if proc.info["name"] == IRACING_EXE_NAME:
+                if proc.info["name"] in IRACING_PROCESS_NAMES:
                     return True
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
@@ -84,17 +109,13 @@ class ProcessController:
 
     def kill_iracing(self, timeout: float = 8.0) -> bool:
         """
-        Gracefully terminate iRacing.
-        1. Send SIGTERM / terminate() to all iRacingSim64DX11 processes
-        2. Wait up to timeout seconds for them to exit
-        3. Force kill any remaining
-        Returns True if at least one process was found and killed,
-        False if it wasn't running.
+        Gracefully terminate all iRacing processes (both iRacingUI.exe and iRacingSim64DX11.exe).
+        Returns True if at least one process was found and killed, False if none were running.
         """
         procs: list[psutil.Process] = [
             p
             for p in psutil.process_iter(["name", "pid"])
-            if p.info["name"] == IRACING_EXE_NAME
+            if p.info["name"] in IRACING_PROCESS_NAMES
         ]
 
         if not procs:
@@ -141,6 +162,14 @@ class ProcessController:
 
         if progress_cb:
             progress_cb(f"Launching iRacing with replay: {replay_path.name}")
+
+        # iRacing must be fully closed before launching with /loadReplay.
+        # If iRacingUI.exe or the sim is still running, /loadReplay is ignored.
+        if self.is_iracing_running():
+            if progress_cb:
+                progress_cb("iRacing still running — killing all processes before relaunch...")
+            self.kill_iracing(timeout=10.0)
+            time.sleep(3.0)  # let OS release file handles
 
         self._process = subprocess.Popen(
             [str(exe_path), "/loadReplay", str(replay_path)],
@@ -192,7 +221,7 @@ class ProcessController:
             target_proc: Optional[psutil.Process] = None
             for proc in psutil.process_iter(["name", "pid"]):
                 try:
-                    if proc.info["name"] == IRACING_EXE_NAME:
+                    if proc.info["name"] in IRACING_PROCESS_NAMES:
                         target_proc = proc
                         break
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -243,7 +272,7 @@ class ProcessController:
         """
         for proc in psutil.process_iter(["name", "pid", "status"]):
             try:
-                if proc.info["name"] != IRACING_EXE_NAME:
+                if proc.info["name"] not in IRACING_PROCESS_NAMES:
                     continue
 
                 cpu_pct: float = proc.cpu_percent(interval=0.1)
