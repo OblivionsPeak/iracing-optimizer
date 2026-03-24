@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  lint-and-check:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyflakes
+
+      - name: Check for syntax errors
+        run: |
+          python -m pyflakes core/settings.py
+          python -m pyflakes core/config_manager.py
+          python -m pyflakes core/fps_sampler.py
+          python -m pyflakes core/process_controller.py
+          python -m pyflakes core/benchmark_runner.py
+          python -m pyflakes core/optimizer.py
+          python -m pyflakes core/profile_store.py
+          python -m pyflakes app.py
+
+      - name: Smoke test imports
+        run: |
+          python -c "from core.settings import SETTINGS, SETTINGS_BY_KEY; print(f'Settings loaded: {len(SETTINGS)}')"
+          python -c "from core.config_manager import ConfigManager; print('ConfigManager OK')"
+          python -c "from core.fps_sampler import FPSSampler, FPSSample; print('FPSSampler OK')"
+          python -c "from core.profile_store import ProfileStore; print('ProfileStore OK')"
+
+      - name: Test mock benchmark run
+        run: |
+          python -c "
+          from core.fps_sampler import FPSSampler, FPSSample
+          s = FPSSampler(mock_mode=True, mock_target_fps=60.0)
+          s.wait_for_iracing(timeout=5)
+          sample = s.sample(duration_seconds=3.0)
+          assert sample.sample_count > 0, 'No samples collected'
+          assert sample.median > 0, 'Zero median FPS'
+          print(f'Mock sample OK: median={sample.median:.1f} p5={sample.p5:.1f}')
+          "

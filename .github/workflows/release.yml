@@ -1,0 +1,89 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Extract version from tag
+        id: version
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Build executable
+        run: |
+          pyinstaller `
+            --onefile `
+            --name "iracing-optimizer" `
+            --add-data "templates;templates" `
+            --add-data "static;static" `
+            --add-data "version.txt;." `
+            --hidden-import "win32api" `
+            --hidden-import "win32con" `
+            --hidden-import "win32security" `
+            --hidden-import "irsdk" `
+            app.py
+
+      - name: Verify build
+        run: |
+          if (!(Test-Path "dist\iracing-optimizer.exe")) {
+            Write-Error "Build failed — exe not found"
+            exit 1
+          }
+          Write-Host "Build OK: $($(Get-Item dist\iracing-optimizer.exe).Length / 1MB) MB"
+
+      - name: Create release notes
+        id: notes
+        shell: bash
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          cat > release_notes.md << EOF
+          ## iRacing Adaptive Settings Optimizer v${VERSION}
+
+          ### Installation
+          1. Download \`iracing-optimizer.exe\` below
+          2. Place it anywhere on your PC (no install needed)
+          3. Double-click to run — browser opens automatically
+
+          ### Requirements
+          - Windows 10/11
+          - iRacing installed
+          - A saved replay file (.rpy) to use as benchmark
+
+          ### Usage
+          1. Select a replay file from the dropdown
+          2. Set your target FPS (60 / 90 / 120 / 144)
+          3. Click **Start Benchmark** (~35–50 min for full run)
+          4. Apply the recommended profile when done
+          EOF
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create ${{ github.ref_name }} `
+            dist\iracing-optimizer.exe `
+            --title "iRacing Optimizer ${{ github.ref_name }}" `
+            --notes-file release_notes.md
