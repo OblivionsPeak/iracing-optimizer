@@ -88,6 +88,7 @@ class LiveCalibrator:
         self._mock_live_fps = mock_live_fps
 
         self._stop_requested = False
+        self._runner: BenchmarkRunner | None = None  # set during Phase 1
 
     # ------------------------------------------------------------------
     # SSE helpers
@@ -103,9 +104,17 @@ class LiveCalibrator:
 
     def stop(self) -> None:
         self._stop_requested = True
+        if self._runner is not None:
+            self._runner.stop()
+
+    def signal_ready(self) -> None:
+        """Forward the user's Ready signal to the Phase 1 benchmark runner."""
+        if self._runner is not None:
+            self._runner.signal_ready()
 
     def reset(self) -> None:
         self._stop_requested = False
+        self._runner = None
 
     # ------------------------------------------------------------------
     # Phase helpers
@@ -147,6 +156,7 @@ class LiveCalibrator:
             replay_path=self._replay_path,
             event_queue=self._event_queue,
         )
+        self._runner = runner  # expose so signal_ready() can reach it
 
         try:
             bench = runner.run_single(

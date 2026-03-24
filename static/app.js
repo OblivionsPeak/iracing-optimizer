@@ -733,13 +733,25 @@ function handleCalibrationEvent(event) {
       appendCalLog(event.msg);
       break;
 
+    case "awaiting_user": {
+      const prompt = document.getElementById("cal-ready-prompt");
+      const msg = document.getElementById("cal-ready-msg");
+      if (prompt) prompt.style.display = "";
+      if (msg && event.msg) msg.textContent = event.msg;
+      appendCalLog(event.msg || "Waiting for you to load the replay…");
+      break;
+    }
+
     case "log":
       appendCalLog(event.msg);
       break;
 
-    case "cal_phase1_done":
+    case "cal_phase1_done": {
+      const p = document.getElementById("cal-ready-prompt");
+      if (p) p.style.display = "none";
       appendCalLog(`Replay baseline: p5=${event.fps_p5.toFixed(1)} fps, median=${event.fps_median.toFixed(1)} fps`);
       break;
+    }
 
     case "cal_waiting":
       document.getElementById("cal-phase-label").textContent = "Phase 2: Waiting for Live Session";
@@ -780,6 +792,16 @@ function handleCalibrationEvent(event) {
   if (TERMINAL.includes(event.type) && _calSSE) {
     _calSSE.close();
     _calSSE = null;
+  }
+}
+
+async function signalCalibrateReady() {
+  try {
+    await apiFetch("/api/calibrate/ready", { method: "POST" });
+    document.getElementById("cal-ready-prompt").style.display = "none";
+    appendCalLog("Ready signal sent — detecting replay…");
+  } catch (e) {
+    appendCalLog(`Ready signal failed: ${e.message}`);
   }
 }
 

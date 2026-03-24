@@ -118,6 +118,14 @@
           Phase: <span id="cal-phase-label" style="color:var(--accent);">—</span>
         </div>
 
+        <!-- Ready prompt (shown when Phase 1 is waiting for user to load replay) -->
+        <div id="cal-ready-prompt" style="display:none; background:#0f1a0f; border:1px solid #3a6a3a; border-radius:4px; padding:12px 14px; margin:10px 0;">
+          <p id="cal-ready-msg" style="color:#9ec09e; font-size:0.85rem; margin:0 0 10px 0">
+            Open iRacing, load your replay, then click Ready.
+          </p>
+          <button class="btn btn-accept" onclick="signalCalibrateReady()">I've Loaded the Replay — Ready</button>
+        </div>
+
         <!-- Progress during collection -->
         <div id="cal-collection-stats" style="display:none;">
           Session: <span id="cal-track">—</span> | Car: <span id="cal-car">—</span><br>

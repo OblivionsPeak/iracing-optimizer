@@ -581,6 +581,15 @@ def api_calibrate_start():
     })
 
 
+@app.route('/api/calibrate/ready', methods=['POST'])
+def api_calibrate_ready():
+    """User clicked Ready during Phase 1 — forward signal to the benchmark runner."""
+    if _calibrator is not None:
+        _calibrator.signal_ready()
+        return jsonify({"status": "ok"})
+    return jsonify({"error": "No calibration running"}), 400
+
+
 @app.route('/api/calibrate/stop', methods=['POST'])
 def api_calibrate_stop():
     """Abort the running calibration."""
