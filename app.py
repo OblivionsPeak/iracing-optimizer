@@ -25,6 +25,7 @@ from core.settings import SETTINGS, SETTINGS_BY_KEY
 from core.profile_store import ProfileStore
 from core.calibration_store import CalibrationStore
 from core.live_calibrator import LiveCalibrator, CalibrationAborted, CalibrationError
+from core.live_session_optimizer import LiveSessionOptimizer
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 
@@ -41,6 +42,18 @@ _event_queue = queue.Queue()
 _benchmark_thread = None
 _runner = None  # BenchmarkRunner instance (for stop signal)
 _state_lock = threading.Lock()
+
+# ── Live session optimization global state ────────────────────────────────────
+_live_state = {
+    "status": "idle",   # idle|waiting|collecting|recommending|done|aborted|error
+    "sessions": [],
+    "pending_recommendation": None,
+    "error": None,
+}
+_live_event_queue = queue.Queue()
+_live_thread = None
+_live_optimizer = None
+_live_state_lock = threading.Lock()
 
 # ── Calibration global state ───────────────────────────────────────────────────
 _cal_state = {"status": "idle", "result": None, "error": None}
@@ -381,6 +394,106 @@ def api_benchmark_result():
     })
 
 
+# ── Live session optimization routes ─────────────────────────────────────────
+
+@app.route('/api/live/status')
+def api_live_status():
+    with _live_state_lock:
+        return jsonify({
+            "status": _live_state["status"],
+            "sessions_run": len(_live_state["sessions"]),
+            "pending_recommendation": _live_state["pending_recommendation"],
+            "error": _live_state["error"],
+        })
+
+
+@app.route('/api/live/start', methods=['POST'])
+def api_live_start():
+    global _live_thread
+    with _live_state_lock:
+        if _live_state["status"] in ("waiting", "collecting", "recommending"):
+            return jsonify({"error": "Live optimization already running"}), 409
+    with _state_lock:
+        if _state["status"] == "running":
+            return jsonify({"error": "Replay benchmark is running — stop it first"}), 409
+    with _cal_state_lock:
+        if _cal_state["status"] == "running":
+            return jsonify({"error": "Calibration is running — stop it first"}), 409
+
+    data = request.get_json(force=True, silent=True) or {}
+    target_fps = int(data.get("target_fps", 60))
+    mock = bool(data.get("mock", False))
+
+    with _live_state_lock:
+        _live_state["status"] = "waiting"
+        _live_state["sessions"] = []
+        _live_state["pending_recommendation"] = None
+        _live_state["error"] = None
+
+    while not _live_event_queue.empty():
+        try:
+            _live_event_queue.get_nowait()
+        except queue.Empty:
+            break
+
+    _live_thread = threading.Thread(
+        target=_run_live_optimization,
+        args=(target_fps, mock),
+        daemon=True,
+        name="live-optimizer",
+    )
+    _live_thread.start()
+    return jsonify({"status": "started", "target_fps": target_fps, "mock": mock})
+
+
+@app.route('/api/live/stop', methods=['POST'])
+def api_live_stop():
+    global _live_optimizer
+    if _live_optimizer is not None:
+        _live_optimizer.stop()
+    with _live_state_lock:
+        _live_state["status"] = "aborted"
+    _live_event_queue.put({"type": "live_aborted", "msg": "Stopped by user", "ts": time.time()})
+    return jsonify({"status": "stopped"})
+
+
+@app.route('/api/live/accept', methods=['POST'])
+def api_live_accept():
+    if _live_optimizer is not None:
+        _live_optimizer.accept_recommendation()
+        with _live_state_lock:
+            _live_state["pending_recommendation"] = None
+    return jsonify({"status": "accepted"})
+
+
+@app.route('/api/live/reject', methods=['POST'])
+def api_live_reject():
+    if _live_optimizer is not None:
+        _live_optimizer.skip_recommendation()
+        with _live_state_lock:
+            _live_state["pending_recommendation"] = None
+    return jsonify({"status": "skipped"})
+
+
+@app.route('/api/live/stream')
+def api_live_stream():
+    def generate():
+        last_keepalive = time.time()
+        while True:
+            try:
+                event = _live_event_queue.get(timeout=1.0)
+                yield f"data: {json.dumps(event)}\n\n"
+                if event.get("type") in ("live_done", "live_aborted", "live_error"):
+                    break
+            except queue.Empty:
+                now = time.time()
+                if now - last_keepalive > 15:
+                    yield ": keepalive\n\n"
+                    last_keepalive = now
+    return Response(generate(), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 # ── Calibration routes ────────────────────────────────────────────────────────
 
 @app.route('/api/calibrate/status')
@@ -621,6 +734,33 @@ def _run_calibration(replay_path: Path, mock: bool):
         _cal_event_queue.put({"type": "cal_error", "msg": str(e), "ts": time.time()})
     finally:
         _calibrator = None
+
+
+# ── Background live optimization thread ───────────────────────────────────────
+
+def _run_live_optimization(target_fps: int, mock: bool):
+    global _live_optimizer
+    cm = ConfigManager()
+    optimizer = LiveSessionOptimizer(
+        config_manager=cm,
+        target_fps=target_fps,
+        event_queue=_live_event_queue,
+        mock_mode=mock,
+        mock_fps=float(target_fps) * 0.85,
+    )
+    _live_optimizer = optimizer
+    try:
+        result = optimizer.run()
+        with _live_state_lock:
+            _live_state["status"] = result.status
+            _live_state["sessions"] = [vars(s) for s in result.sessions]
+    except Exception as e:
+        with _live_state_lock:
+            _live_state["status"] = "error"
+            _live_state["error"] = str(e)
+        _live_event_queue.put({"type": "live_error", "msg": str(e), "ts": time.time()})
+    finally:
+        _live_optimizer = None
 
 
 # ── Port helper ───────────────────────────────────────────────────────────────

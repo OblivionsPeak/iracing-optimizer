@@ -6,7 +6,11 @@ let _sseSource = null;
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
+window._benchmarkMode = 'replay';
+window._liveSse = null;
+
 document.addEventListener("DOMContentLoaded", () => {
+  setBenchmarkMode('replay');
   loadReplays();
   loadProfiles();
   loadCurrentSettings();
@@ -112,9 +116,39 @@ async function loadCurrentSettings() {
   }
 }
 
+// ── Benchmark mode toggle ─────────────────────────────────────────────────────
+
+function setBenchmarkMode(mode) {
+  window._benchmarkMode = mode;
+  document.getElementById('btn-mode-replay').classList.toggle('active', mode === 'replay');
+  document.getElementById('btn-mode-live').classList.toggle('active', mode === 'live');
+
+  const replayGroup = document.getElementById('replay-file-group');
+  const liveInfo    = document.getElementById('live-mode-info');
+  const startBtn    = document.getElementById('btn-start-benchmark');
+  const modeDesc    = document.getElementById('mode-description');
+
+  if (mode === 'replay') {
+    replayGroup.style.display = '';
+    liveInfo.style.display    = 'none';
+    if (startBtn) startBtn.textContent = 'Start Benchmark';
+    if (modeDesc) modeDesc.textContent = 'Optimizes using a replay file. Fast (~35–50 min), fully automated.';
+  } else {
+    replayGroup.style.display = 'none';
+    liveInfo.style.display    = '';
+    if (startBtn) startBtn.textContent = 'Start Live Optimization';
+    if (modeDesc) modeDesc.textContent = 'Optimizes during real iRacing sessions. More accurate, requires 3–6 sessions.';
+  }
+}
+
 // ── Benchmark control ─────────────────────────────────────────────────────────
 
 async function startBenchmark() {
+  if (window._benchmarkMode === 'live') {
+    startLiveOptimization();
+    return;
+  }
+
   const replayPath = document.getElementById("replay-select").value;
   if (!replayPath) {
     alert("Please select a replay file.");
@@ -739,4 +773,151 @@ function resetCalUI() {
   const stopBtn = document.getElementById("btn-cal-stop");
   if (startBtn) startBtn.style.display = "";
   if (stopBtn) stopBtn.style.display = "none";
+}
+
+// ── Live Session Optimization ─────────────────────────────────────────────────
+
+async function startLiveOptimization() {
+  const selectedFps = document.querySelector('input[name="fps"]:checked');
+  let targetFps = 120;
+  if (selectedFps) {
+    targetFps = selectedFps.value === 'custom'
+      ? parseInt(document.getElementById('fps-custom').value, 10) || 120
+      : parseInt(selectedFps.value, 10);
+  }
+  const mock = document.getElementById('mock-mode')?.checked || false;
+
+  try {
+    const res = await fetch('/api/live/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_fps: targetFps, mock }),
+    });
+    const data = await res.json();
+    if (data.error) { alert(data.error); return; }
+
+    document.getElementById('panel-live').classList.remove('hidden');
+    document.getElementById('panel-results').classList.add('hidden');
+    const startBtn = document.getElementById('btn-start-benchmark');
+    if (startBtn) startBtn.disabled = true;
+
+    startLiveSSE();
+  } catch (e) {
+    alert(`Failed to start live optimization: ${e.message}`);
+  }
+}
+
+async function stopLiveOptimization() {
+  await fetch('/api/live/stop', { method: 'POST' });
+}
+
+async function acceptRecommendation() {
+  await fetch('/api/live/accept', { method: 'POST' });
+  document.getElementById('live-recommendation-box').style.display = 'none';
+  document.getElementById('live-status-message').textContent =
+    'Recommendation applied. Start your next iRacing session when ready.';
+}
+
+async function skipRecommendation() {
+  await fetch('/api/live/reject', { method: 'POST' });
+  document.getElementById('live-recommendation-box').style.display = 'none';
+  document.getElementById('live-status-message').textContent =
+    'Skipped. Waiting for next session to try another setting...';
+}
+
+function startLiveSSE() {
+  if (window._liveSse) window._liveSse.close();
+  window._liveSse = new EventSource('/api/live/stream');
+  window._liveSse.onmessage = e => {
+    try { handleLiveEvent(JSON.parse(e.data)); } catch (_) {}
+  };
+  window._liveSse.onerror = () => appendLiveLog('Connection lost.');
+}
+
+function handleLiveEvent(ev) {
+  const statusEl = document.getElementById('live-status-message');
+  const TERMINAL = ['live_done', 'live_aborted', 'live_error'];
+
+  switch (ev.type) {
+    case 'live_waiting':
+      if (statusEl) statusEl.textContent = ev.msg;
+      document.getElementById('live-fps-display').style.display = 'none';
+      document.getElementById('live-recommendation-box').style.display = 'none';
+      appendLiveLog(ev.msg);
+      if (ev.session_num) {
+        const ctr = document.getElementById('live-session-counter');
+        if (ctr) ctr.textContent = `Session ${ev.session_num} — waiting for iRacing`;
+      }
+      break;
+
+    case 'live_session_start':
+      if (statusEl) statusEl.textContent = `Collecting FPS — ${esc(ev.track)} (${esc(ev.session_type)})`;
+      document.getElementById('live-fps-display').style.display = '';
+      appendLiveLog(`Session started: ${ev.track} — ${ev.session_type}`);
+      break;
+
+    case 'live_collecting':
+      document.getElementById('live-current-fps').textContent = `${ev.current_fps} fps`;
+      document.getElementById('live-sample-count').textContent = ev.sample_count;
+      document.getElementById('live-elapsed').textContent = `${ev.elapsed}s`;
+      break;
+
+    case 'live_session_result':
+      appendLiveLog(`Session complete — p5: ${ev.fps_p5.toFixed(1)} fps  median: ${ev.fps_median.toFixed(1)} fps  target: ${ev.target_fps} fps`);
+      document.getElementById('live-fps-display').style.display = 'none';
+      if (ev.target_met && statusEl) statusEl.textContent = `Target reached! ${ev.fps_p5.toFixed(1)} fps ≥ ${ev.target_fps} fps`;
+      break;
+
+    case 'live_session_skipped':
+      appendLiveLog(ev.msg);
+      break;
+
+    case 'live_recommendation':
+      document.getElementById('rec-display-name').textContent = ev.display_name;
+      document.getElementById('rec-current-value').textContent = ev.current_value;
+      document.getElementById('rec-recommended-value').textContent = ev.recommended_value;
+      document.getElementById('rec-expected-gain').textContent = `+${ev.expected_fps_gain} fps`;
+      document.getElementById('rec-description').textContent = ev.description;
+      document.getElementById('live-recommendation-box').style.display = '';
+      if (statusEl) statusEl.textContent = 'Review the recommendation below before starting your next session.';
+      appendLiveLog(`Recommendation: ${ev.display_name} ${ev.current_value}→${ev.recommended_value} (est. +${ev.expected_fps_gain} fps)`);
+      break;
+
+    case 'live_setting_applied':
+      appendLiveLog(`✓ Applied: ${ev.display_name} → ${ev.value}`);
+      break;
+
+    case 'live_setting_skipped':
+      appendLiveLog(`— Skipped: ${ev.display_name}`);
+      break;
+
+    case 'live_done':
+      if (statusEl) statusEl.textContent = ev.msg;
+      appendLiveLog(ev.msg);
+      document.getElementById('btn-start-benchmark').disabled = false;
+      break;
+
+    case 'live_aborted':
+    case 'live_error':
+      if (statusEl) statusEl.textContent = ev.msg;
+      appendLiveLog(ev.msg);
+      document.getElementById('btn-start-benchmark').disabled = false;
+      break;
+  }
+
+  if (TERMINAL.includes(ev.type) && window._liveSse) {
+    window._liveSse.close();
+    window._liveSse = null;
+  }
+}
+
+function appendLiveLog(msg) {
+  const el = document.getElementById('live-log');
+  if (!el) return;
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  const ts = new Date().toLocaleTimeString('en-US', { hour12: false });
+  line.textContent = `[${ts}] ${msg}`;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
 }
