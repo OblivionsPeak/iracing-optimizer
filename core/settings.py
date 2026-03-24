@@ -3,8 +3,6 @@ settings.py — All tunable iRacing graphics settings with metadata.
 Drives the optimizer and UI. Ordered by impact_weight descending.
 """
 
-from typing import Optional
-
 SETTINGS: list[dict] = [
     {
         "key": "AntiAliasMethod",

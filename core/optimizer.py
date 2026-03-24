@@ -6,13 +6,11 @@ to find the maximum quality level that still meets the target FPS.
 """
 
 import time
-from dataclasses import dataclass, field
-from queue import Queue
-from typing import Optional
+from dataclasses import dataclass
 
 from .benchmark_runner import BenchmarkResult, BenchmarkRunner
 from .config_manager import ConfigManager
-from .settings import SETTINGS, SETTINGS_BY_KEY
+from .settings import SETTINGS
 
 
 @dataclass

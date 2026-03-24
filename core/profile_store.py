@@ -6,8 +6,6 @@ Each profile is stored as a JSON file under the profiles/ directory.
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
-
 PROFILES_DIR = Path(__file__).parent.parent / "profiles"
 
 

@@ -9,7 +9,6 @@ import json
 import os
 import queue
 import socket
-import sys
 import threading
 import time
 import webbrowser
@@ -24,7 +23,7 @@ from core.fps_sampler import FPSSampler
 from core.settings import SETTINGS, SETTINGS_BY_KEY
 from core.profile_store import ProfileStore
 from core.calibration_store import CalibrationStore
-from core.live_calibrator import LiveCalibrator, CalibrationAborted, CalibrationError
+from core.live_calibrator import LiveCalibrator, CalibrationAborted
 from core.live_session_optimizer import LiveSessionOptimizer
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -287,7 +286,6 @@ def api_benchmark_start():
 @app.route('/api/benchmark/stop', methods=['POST'])
 def api_benchmark_stop():
     """Abort current benchmark run"""
-    global _runner
     with _state_lock:
         status = _state["status"]
 
@@ -448,7 +446,6 @@ def api_live_start():
 
 @app.route('/api/live/stop', methods=['POST'])
 def api_live_stop():
-    global _live_optimizer
     if _live_optimizer is not None:
         _live_optimizer.stop()
     with _live_state_lock:
@@ -578,7 +575,6 @@ def api_calibrate_start():
 @app.route('/api/calibrate/stop', methods=['POST'])
 def api_calibrate_stop():
     """Abort the running calibration."""
-    global _calibrator
     with _cal_state_lock:
         status = _cal_state["status"]
 
@@ -629,7 +625,6 @@ def _run_benchmark(target_fps: int, replay_path: Path, mock: bool, correction_fa
     global _runner
 
     from core.benchmark_runner import BenchmarkRunner
-    from core.profile_store import ProfileStore
 
     cm = ConfigManager()
     pc = ProcessController()
@@ -782,7 +777,7 @@ if __name__ == '__main__':
     port = _find_free_port(5002)
     url = f"http://127.0.0.1:{port}"
     print(f"\n{'='*52}")
-    print(f"  iRacing Adaptive Settings Optimizer")
+    print("  iRacing Adaptive Settings Optimizer")
     print(f"  Open: {url}")
     print(f"{'='*52}\n")
     print("Press Ctrl+C to stop.\n")
