@@ -196,6 +196,17 @@ async function startBenchmark() {
   }
 }
 
+async function signalReady() {
+  try {
+    await apiFetch("/api/benchmark/ready", { method: "POST" });
+    const prompt = document.getElementById("ready-prompt");
+    if (prompt) prompt.style.display = "none";
+    appendLog("Ready signal sent — detecting replay…");
+  } catch (e) {
+    appendLog(`Ready signal failed: ${e.message}`, "log-error");
+  }
+}
+
 async function stopBenchmark() {
   if (!confirm("Abort the current benchmark run?")) return;
   try {
@@ -250,9 +261,22 @@ function handleSSEEvent(ev) {
   const type = ev.type || "";
 
   switch (type) {
+    case "awaiting_user": {
+      const prompt = document.getElementById("ready-prompt");
+      const msg = document.getElementById("ready-msg");
+      if (prompt) prompt.style.display = "";
+      if (msg && ev.msg) msg.textContent = ev.msg;
+      appendLog(ev.msg || "Waiting for you to load the replay…", "log-warn");
+      break;
+    }
+
     case "log":
+      // Hide ready prompt once benchmark is running again
+      if (ev.msg && (ev.msg.includes("Detecting replay") || ev.msg.includes("Stabilizing") || ev.msg.includes("Sampling"))) {
+        const prompt = document.getElementById("ready-prompt");
+        if (prompt) prompt.style.display = "none";
+      }
       appendLog(ev.msg || "");
-      // Parse live FPS from sampler log lines
       parseLiveFps(ev.msg || "");
       break;
 

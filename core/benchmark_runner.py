@@ -30,10 +30,15 @@ class BenchmarkRunner:
     """
     Runs a single benchmark iteration.
     Emits SSE-compatible events to an optional Queue[dict].
+
+    iRacing 2.59+ blocks direct sim launching, so the runner no longer
+    auto-launches iRacing. Instead it kills the sim, applies settings,
+    then waits for the user to open iRacing and load their replay manually.
+    The UI shows a "Ready" button; calling signal_ready() unblocks the wait.
     """
 
-    KILL_WAIT = 3.0        # seconds after kill before launching
-    WARMUP_SECONDS = 10.0  # FPS stabilization wait after iRacing connects
+    KILL_WAIT = 3.0        # seconds after kill before waiting for user
+    WARMUP_SECONDS = 10.0  # FPS stabilization wait after replay detected
     SAMPLE_SECONDS = 30.0  # FPS sampling duration
 
     def __init__(self,
@@ -48,6 +53,7 @@ class BenchmarkRunner:
         self.replay_path = replay_path
         self.event_queue = event_queue
         self._stop_event = threading.Event()
+        self._ready_event = threading.Event()  # set by signal_ready()
 
     # ------------------------------------------------------------------
     # SSE event helpers
@@ -89,36 +95,43 @@ class BenchmarkRunner:
 
         # Step 2 — kill iRacing if running
         if self.pc.is_iracing_running():
-            self.log("iRacing is running — terminating…")
+            self.log("iRacing is running — closing to apply new settings…")
             self.pc.kill_iracing()
         else:
-            self.log("iRacing not running, skipping kill step.")
+            self.log("iRacing not running.")
 
         # Step 3 — wait after kill
-        self.log(f"Waiting {self.KILL_WAIT:.0f}s before launch…")
         for _ in range(int(self.KILL_WAIT * 10)):
             if self._stop_event.is_set():
                 raise RuntimeError("Benchmark aborted via stop signal.")
             time.sleep(0.1)
 
-        # Step 4 — launch iRacing with replay
-        self.log(f"Launching iRacing with replay: {self.replay_path.name}")
-        self.pc.launch_replay(
-            self.replay_path,
-            progress_cb=self.log,
-        )
+        # Step 4 — ask user to open iRacing and load the replay
+        self._ready_event.clear()
+        self.emit("awaiting_user",
+                  msg=f"Settings applied. Open iRacing, load replay '{self.replay_path.name}', then click Ready.",
+                  iteration=iteration,
+                  total_iterations=total_iterations)
+        self.log(f"Waiting for you to load replay '{self.replay_path.name}' in iRacing…")
 
-        # Step 5a — wait for SDK connection (120s timeout)
-        self.log("Waiting for iRacing SDK to connect…")
+        # Block until user clicks Ready or stop is signalled
+        while not self._stop_event.is_set():
+            if self._ready_event.wait(timeout=1.0):
+                break
+
+        if self._stop_event.is_set():
+            raise RuntimeError("Benchmark aborted via stop signal.")
+
+        # Step 5a — wait for SDK to confirm replay is actually playing (60s)
+        self.log("Detecting replay via iRacing SDK…")
         connected = self.sampler.wait_for_iracing(
-            timeout=120.0,
+            timeout=60.0,
             progress_cb=self.log,
         )
         if not connected:
-            self.pc.kill_iracing()
             raise RuntimeError(
-                "iRacing failed to connect within 120s. "
-                "Replay may not have started."
+                "Replay not detected within 60s of clicking Ready. "
+                "Make sure the replay is playing in iRacing, then try again."
             )
 
         if self._stop_event.is_set():
@@ -165,11 +178,17 @@ class BenchmarkRunner:
     # Control
     # ------------------------------------------------------------------
 
+    def signal_ready(self) -> None:
+        """Called when user clicks Ready in the UI — unblocks the iteration wait."""
+        self._ready_event.set()
+
     def stop(self) -> None:
         """Signal this runner and its sampler to abort."""
         self._stop_event.set()
+        self._ready_event.set()  # unblock any waiting iteration
         self.sampler.stop()
 
     def reset(self) -> None:
         self._stop_event.clear()
+        self._ready_event.clear()
         self.sampler.reset()

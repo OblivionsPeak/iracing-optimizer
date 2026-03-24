@@ -173,6 +173,13 @@
         <div id="log-output" class="log-output"></div>
       </div>
 
+      <div id="ready-prompt" style="display:none; background:#0f1a0f; border:1px solid #3a6a3a; border-radius:4px; padding:14px 16px; margin:12px 0;">
+        <p id="ready-msg" style="color:#9ec09e; font-size:0.88rem; margin:0 0 12px 0">
+          Open iRacing, load your replay, then click Ready.
+        </p>
+        <button class="btn btn-accept" onclick="signalReady()">I've Loaded the Replay — Ready</button>
+      </div>
+
       <div class="field-group" style="margin-top: 1rem;">
         <button id="btn-abort" class="btn btn-danger" onclick="stopBenchmark()">
           Abort

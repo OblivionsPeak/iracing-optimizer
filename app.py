@@ -283,6 +283,15 @@ def api_benchmark_start():
     })
 
 
+@app.route('/api/benchmark/ready', methods=['POST'])
+def api_benchmark_ready():
+    """User clicked Ready — they have iRacing open with replay loaded."""
+    if _runner is not None:
+        _runner.signal_ready()
+        return jsonify({"status": "ok"})
+    return jsonify({"error": "No benchmark running"}), 400
+
+
 @app.route('/api/benchmark/stop', methods=['POST'])
 def api_benchmark_stop():
     """Abort current benchmark run"""
