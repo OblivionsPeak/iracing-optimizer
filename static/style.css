@@ -1,0 +1,565 @@
+/* ── iRacing Adaptive Settings Optimizer — Dark Theme ────────────────────── */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg:         #0d0d0d;
+  --card-bg:    #1a1a1a;
+  --border:     #2e2e2e;
+  --accent:     #e8ff00;
+  --accent-dim: #b8cc00;
+  --text:       #e0e0e0;
+  --text-dim:   #888;
+  --danger:     #e85555;
+  --success:    #55e87a;
+  --log-text:   #7aff9a;
+  --font:       'Courier New', 'Lucida Console', monospace;
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+.container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+
+header {
+  text-align: center;
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+header h1 {
+  font-size: 1.6rem;
+  color: var(--accent);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+header .subtitle {
+  color: var(--text-dim);
+  margin-top: 0.4rem;
+  font-size: 0.85rem;
+}
+
+/* ── Cards ───────────────────────────────────────────────────────────────── */
+
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.card h2 {
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  margin-bottom: 1.2rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.card h3 {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-dim);
+  margin: 1.4rem 0 0.8rem;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ── Form fields ─────────────────────────────────────────────────────────── */
+
+.field-group {
+  margin-bottom: 1rem;
+}
+
+label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.4rem;
+}
+
+input[type="text"],
+input[type="number"],
+select {
+  background: #111;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 0.9rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 3px;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+select:focus {
+  border-color: var(--accent);
+}
+
+input.input-readonly {
+  color: var(--text-dim);
+  cursor: default;
+}
+
+.field-hint {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  display: block;
+  margin-top: 0.25rem;
+}
+
+/* ── FPS radio group ─────────────────────────────────────────────────────── */
+
+.fps-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  align-items: center;
+}
+
+.radio-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: 0;
+  margin: 0;
+}
+
+.radio-label input[type="radio"] {
+  accent-color: var(--accent);
+  width: auto;
+  cursor: pointer;
+}
+
+.fps-custom-input {
+  width: 70px !important;
+  display: inline-block;
+}
+
+/* ── Checkbox ────────────────────────────────────────────────────────────── */
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.checkbox-label input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: auto;
+  cursor: pointer;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+
+.btn {
+  font-family: var(--font);
+  font-size: 0.85rem;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  padding: 0.55rem 1.4rem;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #000;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-dim);
+}
+
+.btn-secondary {
+  background: #2a2a2a;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #333;
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: #fff;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #c44;
+}
+
+.btn-sm {
+  padding: 0.2rem 0.6rem;
+  font-size: 0.7rem;
+  background: #222;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+
+.btn-sm:hover {
+  color: var(--text);
+  border-color: #555;
+}
+
+/* ── Progress bar ────────────────────────────────────────────────────────── */
+
+.progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin-bottom: 1rem;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 12px;
+  background: #111;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 6px;
+  transition: width 0.4s ease;
+}
+
+.progress-label {
+  font-size: 0.8rem;
+  color: var(--accent);
+  min-width: 36px;
+  text-align: right;
+}
+
+/* ── Status row ──────────────────────────────────────────────────────────── */
+
+.status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.status-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.status-label {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.status-value {
+  font-size: 0.95rem;
+}
+
+.accent {
+  color: var(--accent);
+}
+
+/* ── Log output ──────────────────────────────────────────────────────────── */
+
+.log-wrap {
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.log-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.3rem 0.6rem;
+  background: #111;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+}
+
+.log-output {
+  height: 200px;
+  overflow-y: auto;
+  background: #060606;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.78rem;
+  color: var(--log-text);
+  line-height: 1.55;
+  scroll-behavior: smooth;
+}
+
+.log-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.log-line.log-error {
+  color: var(--danger);
+}
+
+.log-line.log-warn {
+  color: #e8b800;
+}
+
+/* ── Results summary ─────────────────────────────────────────────────────── */
+
+.results-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 0.8rem;
+  margin-bottom: 0.5rem;
+}
+
+.stat-card {
+  background: #111;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.7rem 1rem;
+  text-align: center;
+}
+
+.stat-card .stat-value {
+  font-size: 1.6rem;
+  color: var(--accent);
+  line-height: 1.2;
+  display: block;
+}
+
+.stat-card .stat-label {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 0.2rem;
+  display: block;
+}
+
+.stat-card.stat-success .stat-value { color: var(--success); }
+.stat-card.stat-fail    .stat-value { color: var(--danger); }
+
+/* ── Settings table ──────────────────────────────────────────────────────── */
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+thead th {
+  background: #111;
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.5rem 0.8rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+tbody tr {
+  border-bottom: 1px solid #1f1f1f;
+  transition: background 0.1s;
+}
+
+tbody tr:hover {
+  background: #1f1f1f;
+}
+
+tbody tr.changed {
+  background: rgba(232, 255, 0, 0.03);
+}
+
+tbody td {
+  padding: 0.45rem 0.8rem;
+  vertical-align: middle;
+}
+
+td.changed-badge {
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+td.no-change {
+  color: var(--text-dim);
+  font-size: 0.7rem;
+}
+
+/* ── Save profile row ────────────────────────────────────────────────────── */
+
+.save-profile-row {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.save-profile-row input[type="text"] {
+  flex: 1;
+  min-width: 200px;
+}
+
+.save-profile-row select {
+  width: auto;
+  flex-shrink: 0;
+}
+
+.save-msg {
+  font-size: 0.8rem;
+  margin-top: 0.6rem;
+  padding: 0.4rem 0.7rem;
+  border-radius: 3px;
+  border: 1px solid transparent;
+}
+
+.save-msg.ok {
+  color: var(--success);
+  border-color: var(--success);
+  background: rgba(85, 232, 122, 0.06);
+}
+
+.save-msg.err {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: rgba(232, 85, 85, 0.06);
+}
+
+/* ── Saved profiles list ─────────────────────────────────────────────────── */
+
+.profiles-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.profile-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 0.8rem;
+  background: #111;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 0.82rem;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.profile-name {
+  color: var(--text);
+  font-weight: bold;
+  flex: 1;
+  min-width: 120px;
+}
+
+.profile-meta {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+.profile-meta .accent {
+  font-size: 0.82rem;
+}
+
+.no-profiles {
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  font-style: italic;
+}
+
+/* ── Input text (save profile) ───────────────────────────────────────────── */
+
+.input-text {
+  background: #111;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 0.9rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 3px;
+  outline: none;
+}
+
+.input-text:focus {
+  border-color: var(--accent);
+}
+
+/* ── Scrollbar styling ───────────────────────────────────────────────────── */
+
+.log-output::-webkit-scrollbar {
+  width: 6px;
+}
+.log-output::-webkit-scrollbar-track {
+  background: #111;
+}
+.log-output::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
+}
+.log-output::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>iRacing Adaptive Settings Optimizer</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>iRacing Adaptive Settings Optimizer</h1>
+      <p class="subtitle">Benchmark your system and find the best graphics settings for your target FPS.</p>
+    </header>
+
+    <!-- ── Panel 1: Setup ────────────────────────────────────────────── -->
+    <section class="card" id="panel-setup">
+      <h2>Setup</h2>
+
+      <div class="field-group">
+        <label for="ini-path">Renderer INI Path</label>
+        <input type="text" id="ini-path" readonly placeholder="Detecting..." class="input-readonly">
+      </div>
+
+      <div class="field-group">
+        <label for="replay-select">Replay File</label>
+        <select id="replay-select">
+          <option value="">-- select a replay --</option>
+        </select>
+        <span class="field-hint" id="replay-hint"></span>
+      </div>
+
+      <div class="field-group">
+        <label>Target FPS</label>
+        <div class="fps-options">
+          <label class="radio-label"><input type="radio" name="fps" value="60"> 60</label>
+          <label class="radio-label"><input type="radio" name="fps" value="90"> 90</label>
+          <label class="radio-label"><input type="radio" name="fps" value="120" checked> 120</label>
+          <label class="radio-label"><input type="radio" name="fps" value="144"> 144</label>
+          <label class="radio-label">
+            <input type="radio" name="fps" value="custom"> Custom:
+            <input type="number" id="fps-custom" min="30" max="360" value="60" class="fps-custom-input">
+          </label>
+        </div>
+      </div>
+
+      <div class="field-group">
+        <label class="checkbox-label">
+          <input type="checkbox" id="mock-mode">
+          Mock mode <span class="field-hint">(test without launching iRacing)</span>
+        </label>
+      </div>
+
+      <div class="field-group">
+        <button id="btn-start" class="btn btn-primary" onclick="startBenchmark()">
+          Start Benchmark
+        </button>
+      </div>
+    </section>
+
+    <!-- ── Panel 2: Live Progress ─────────────────────────────────────── -->
+    <section class="card hidden" id="panel-progress">
+      <h2>Running Benchmark</h2>
+
+      <div class="progress-wrap">
+        <div class="progress-bar">
+          <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
+        </div>
+        <span class="progress-label" id="progress-label">0%</span>
+      </div>
+
+      <div class="status-row">
+        <div class="status-item">
+          <span class="status-label">Currently testing:</span>
+          <span id="current-setting" class="status-value accent">—</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">Live FPS:</span>
+          <span id="live-fps" class="status-value accent">—</span>
+        </div>
+      </div>
+
+      <div class="log-wrap">
+        <div class="log-header">
+          <span>Log</span>
+          <button class="btn btn-sm" onclick="clearLog()">Clear</button>
+        </div>
+        <div id="log-output" class="log-output"></div>
+      </div>
+
+      <div class="field-group" style="margin-top: 1rem;">
+        <button id="btn-abort" class="btn btn-danger" onclick="stopBenchmark()">
+          Abort
+        </button>
+      </div>
+    </section>
+
+    <!-- ── Panel 3: Results ───────────────────────────────────────────── -->
+    <section class="card hidden" id="panel-results">
+      <h2>Results</h2>
+
+      <div class="results-summary" id="results-summary">
+        <!-- populated by JS -->
+      </div>
+
+      <h3>Settings Comparison</h3>
+      <div class="table-wrap">
+        <table id="settings-table">
+          <thead>
+            <tr>
+              <th>Setting</th>
+              <th>Original</th>
+              <th>Optimized</th>
+              <th>Change</th>
+            </tr>
+          </thead>
+          <tbody id="settings-tbody">
+            <!-- populated by JS -->
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Save Profile</h3>
+      <div class="save-profile-row">
+        <input type="text" id="profile-name" placeholder="Profile name, e.g. Race Day 120fps" class="input-text">
+        <select id="profile-scenario">
+          <option value="practice">Practice</option>
+          <option value="race">Race</option>
+          <option value="vr">VR</option>
+        </select>
+        <button class="btn btn-primary" onclick="saveProfile()">Save</button>
+      </div>
+      <div id="save-msg" class="save-msg hidden"></div>
+
+      <h3>Saved Profiles</h3>
+      <div id="profiles-list" class="profiles-list">
+        <!-- populated by JS -->
+      </div>
+
+      <div class="field-group" style="margin-top: 1.5rem;">
+        <button class="btn btn-secondary" onclick="resetToSetup()">Run Another Benchmark</button>
+      </div>
+    </section>
+
+  </div><!-- /container -->
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
