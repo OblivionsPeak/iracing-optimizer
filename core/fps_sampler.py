@@ -112,12 +112,16 @@ class FPSSampler:
                 if connected and ir.is_connected:
                     sdk_connected = True
                     if progress_cb:
-                        progress_cb("iRacing SDK connected. Waiting for replay to start…")
+                        progress_cb(
+                            "iRacing SDK connected. "
+                            "Please load your replay in iRacing: "
+                            "Garage > Replay > select your file."
+                        )
                 else:
                     remaining = max(0.0, deadline - time.monotonic())
                     if progress_cb:
                         progress_cb(
-                            f"iRacing not detected. Retrying… ({remaining:.0f}s remaining)"
+                            f"Waiting for iRacing to open… ({remaining:.0f}s remaining)"
                         )
                     time.sleep(0.5)
                     continue
@@ -130,7 +134,7 @@ class FPSSampler:
 
             if replay_playing:
                 if progress_cb:
-                    progress_cb("Replay is playing. Ready to sample.")
+                    progress_cb("Replay detected — starting benchmark.")
                 try:
                     ir.shutdown()
                 except Exception:

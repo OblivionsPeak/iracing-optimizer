@@ -54,27 +54,23 @@ class ProcessController:
 
     def find_iracing_exe(self) -> Path:
         """
-        Find iRacingSim64DX11.exe for replay launching.
-        Falls back to iRacingUI.exe if the sim exe is not present
-        (though replay loading requires the sim exe).
+        Find iRacingUI.exe (the modern launcher, required since iRacing 2.59+).
+        Falls back to iRacingSim64DX11.exe for older installs.
         Raises FileNotFoundError if neither is found.
         """
         install_dir = _find_install_dir()
 
         if install_dir:
+            # Prefer iRacingUI.exe — direct sim launch is blocked in 2.59+
+            ui_exe = install_dir / IRACING_UI_EXE
+            if ui_exe.exists():
+                return ui_exe
             sim_exe = install_dir / IRACING_SIM_EXE
             if sim_exe.exists():
                 return sim_exe
-            # iRacingUI.exe present but not the sim exe — likely installer-only state
-            ui_exe = install_dir / IRACING_UI_EXE
-            if ui_exe.exists():
-                raise FileNotFoundError(
-                    f"Found iRacingUI.exe at {install_dir} but not {IRACING_SIM_EXE}. "
-                    "Launch iRacing at least once and let it finish updating before using this tool."
-                )
 
         raise FileNotFoundError(
-            f"Could not find {IRACING_SIM_EXE}. "
+            f"Could not find {IRACING_UI_EXE} or {IRACING_SIM_EXE}. "
             "Verify iRacing is installed. Searched registry and common install paths."
         )
 
@@ -162,24 +158,26 @@ class ProcessController:
         if progress_cb:
             progress_cb(f"Launching iRacing with replay: {replay_path.name}")
 
-        # iRacing must be fully closed before launching with /loadReplay.
-        # If iRacingUI.exe or the sim is still running, /loadReplay is ignored.
+        # iRacing 2.59+ blocks direct sim launching — must use iRacingUI.exe.
+        # /loadReplay is not supported via the UI launcher, so the user must
+        # load the replay manually from the iRacing UI after it opens.
         if self.is_iracing_running():
             if progress_cb:
-                progress_cb("iRacing still running — killing all processes before relaunch...")
+                progress_cb("Closing iRacing to apply new settings...")
             self.kill_iracing(timeout=10.0)
-            time.sleep(3.0)  # let OS release file handles
+            time.sleep(3.0)
 
         self._process = subprocess.Popen(
-            [str(exe_path), "/loadReplay", str(replay_path)],
+            [str(exe_path)],
             creationflags=subprocess.DETACHED_PROCESS
             | subprocess.CREATE_NEW_PROCESS_GROUP,
         )
 
         if progress_cb:
             progress_cb(
-                f"iRacing launched (PID: {self._process.pid}). "
-                "Waiting for process to initialise..."
+                f"iRacing launching (PID: {self._process.pid}). "
+                "Please load your replay from the iRacing UI — "
+                "the benchmark will start automatically once replay is detected."
             )
 
         return self._process
