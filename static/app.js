@@ -11,6 +11,7 @@ document.addEventListener("DOMContentLoaded", () => {
   loadProfiles();
   loadCurrentSettings();
   checkRunningState();
+  loadCalibrationStatus();
 });
 
 // ── API helpers ───────────────────────────────────────────────────────────────
@@ -29,6 +30,7 @@ async function loadReplays() {
     const data = await apiFetch("/api/replays");
     sel.innerHTML = '<option value="">-- select a replay --</option>';
     if (data.replays && data.replays.length > 0) {
+      window._replayList = data.replays;
       data.replays.forEach(r => {
         const opt = document.createElement("option");
         opt.value = r.path;
@@ -37,10 +39,22 @@ async function loadReplays() {
       });
       hint.textContent = `${data.replays.length} replay(s) found`;
     } else {
+      window._replayList = [];
       hint.textContent = "No .rpy files found in Documents\\iRacing\\replay\\";
     }
     if (data.error) {
       hint.textContent = `Error: ${data.error}`;
+    }
+    // Populate calibration replay dropdown with same list
+    const calSel = document.getElementById("cal-replay-select");
+    if (calSel) {
+      calSel.innerHTML = '<option value="">-- select a replay --</option>';
+      (window._replayList || []).forEach(r => {
+        const opt = document.createElement("option");
+        opt.value = r.path;
+        opt.textContent = `${r.name}  (${r.size_mb} MB)`;
+        calSel.appendChild(opt);
+      });
     }
   } catch (e) {
     hint.textContent = `Failed to load replays: ${e.message}`;
@@ -131,6 +145,11 @@ async function startBenchmark() {
     if (data.error) {
       alert(`Could not start: ${data.error}`);
       return;
+    }
+
+    const staleWarning = document.getElementById("stale-cal-warning");
+    if (staleWarning) {
+      staleWarning.style.display = data.stale_calibration_warning === true ? "" : "none";
     }
 
     showPanel("progress");
@@ -230,9 +249,19 @@ function handleSSEEvent(ev) {
       setCurrentSetting("Done", "");
       _sseSource && _sseSource.close();
       _sseSource = null;
+      // Populate calibration row in results if data present
+      if (ev.correction_factor != null) {
+        const cfEl = document.getElementById("result-correction-factor");
+        const atEl = document.getElementById("result-adjusted-target");
+        const rowEl = document.getElementById("result-calibration-row");
+        if (cfEl) cfEl.textContent = `${ev.correction_factor.toFixed(2)}×`;
+        if (atEl) atEl.textContent = ev.adjusted_target_fps != null ? `${ev.adjusted_target_fps} fps` : "—";
+        if (rowEl) rowEl.style.display = "flex";
+      }
       setTimeout(async () => {
         await loadResult();
         await loadProfiles();
+        await loadCalibrationStatus();
         showPanel("results");
       }, 600);
       break;
@@ -496,4 +525,218 @@ function esc(str) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+// ── Calibration ────────────────────────────────────────────────────────────────
+
+let _calSSE = null;
+
+function toggleCalibratePanel() {
+  const body = document.getElementById("cal-panel-body");
+  const arrow = document.getElementById("cal-arrow");
+  if (!body) return;
+  const isOpen = body.style.display !== "none";
+  body.style.display = isOpen ? "none" : "";
+  if (arrow) arrow.style.transform = isOpen ? "" : "rotate(90deg)";
+}
+
+function expandCalibratePanel() {
+  const body = document.getElementById("cal-panel-body");
+  const arrow = document.getElementById("cal-arrow");
+  if (!body) return;
+  body.style.display = "";
+  if (arrow) arrow.style.transform = "rotate(90deg)";
+}
+
+async function loadCalibrationStatus() {
+  try {
+    const data = await apiFetch("/api/calibrate/status");
+    renderCalibrationStatus(data);
+  } catch (e) {
+    // Non-fatal — calibration feature may not be deployed yet
+  }
+}
+
+function renderCalibrationStatus(data) {
+  const el = document.getElementById("cal-status-line");
+  if (!el) return;
+
+  if (data.correction_factor == null) {
+    el.textContent = "No calibration — optimizer using replay FPS directly (correction factor: 1.0×)";
+    el.style.color = "var(--text-dim)";
+  } else {
+    const pct = Math.round(data.correction_factor * 100);
+    const factor = data.correction_factor.toFixed(2);
+    const liveP5 = data.live_fps_p5 != null ? data.live_fps_p5.toFixed(1) : "?";
+    const replayP5 = data.replay_fps_p5 != null ? data.replay_fps_p5.toFixed(1) : "?";
+    if (data.valid) {
+      el.textContent = `Calibrated — Live FPS is ${pct}% of replay (factor: ${factor}×). Live p5: ${liveP5} fps vs Replay p5: ${replayP5} fps.`;
+      el.style.color = "var(--success)";
+    } else {
+      el.textContent = `Calibration data present (factor: ${factor}×) but marked invalid.`;
+      el.style.color = "#e8b800";
+    }
+  }
+
+  // Sync cal replay dropdown if replays already loaded
+  const calSel = document.getElementById("cal-replay-select");
+  if (calSel && window._replayList && window._replayList.length > 0 && calSel.options.length <= 1) {
+    calSel.innerHTML = '<option value="">-- select a replay --</option>';
+    window._replayList.forEach(r => {
+      const opt = document.createElement("option");
+      opt.value = r.path;
+      opt.textContent = `${r.name}  (${r.size_mb} MB)`;
+      calSel.appendChild(opt);
+    });
+  }
+}
+
+async function startCalibration() {
+  const calSel = document.getElementById("cal-replay-select");
+  const replay = calSel ? calSel.value : "";
+  if (!replay) {
+    alert("Please select a replay file for the baseline.");
+    return;
+  }
+
+  const mock = document.getElementById("mock-mode") ? document.getElementById("mock-mode").checked : false;
+
+  try {
+    const res = await fetch("/api/calibrate/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ replay, mock }),
+    });
+
+    if (res.status === 409) {
+      alert("Calibration is already running.");
+      return;
+    }
+
+    const data = await res.json();
+    if (data.error) {
+      alert(`Could not start calibration: ${data.error}`);
+      return;
+    }
+
+    document.getElementById("btn-cal-start").style.display = "none";
+    document.getElementById("btn-cal-stop").style.display = "";
+    document.getElementById("cal-log").style.display = "";
+    document.getElementById("cal-phase").style.display = "";
+    document.getElementById("cal-log").textContent = "";
+    expandCalibratePanel();
+    startCalibrationSSE();
+
+  } catch (e) {
+    alert(`Calibration request failed: ${e.message}`);
+  }
+}
+
+async function stopCalibration() {
+  try {
+    await apiFetch("/api/calibrate/stop", { method: "POST" });
+    appendCalLog("Stop requested — waiting for confirmation...");
+  } catch (e) {
+    appendCalLog(`Stop request failed: ${e.message}`);
+  }
+}
+
+async function clearCalibration() {
+  try {
+    await fetch("/api/calibrate/clear", { method: "POST" });
+    renderCalibrationStatus({ correction_factor: null, valid: null });
+    appendCalLog("Calibration data cleared.");
+  } catch (e) {
+    appendCalLog(`Clear request failed: ${e.message}`);
+  }
+}
+
+function startCalibrationSSE() {
+  if (_calSSE) { _calSSE.close(); }
+  _calSSE = new EventSource("/api/calibrate/stream");
+  _calSSE.onmessage = (e) => {
+    let ev;
+    try { ev = JSON.parse(e.data); } catch (_) { return; }
+    handleCalibrationEvent(ev);
+  };
+  _calSSE.onerror = () => {
+    appendCalLog("Connection lost.");
+    resetCalUI();
+  };
+}
+
+function handleCalibrationEvent(event) {
+  const TERMINAL = ["cal_done", "cal_error", "cal_aborted"];
+
+  switch (event.type) {
+    case "cal_phase1_start":
+      document.getElementById("cal-phase-label").textContent = "Phase 1: Replay Baseline";
+      document.getElementById("cal-phase").style.display = "";
+      appendCalLog(event.msg);
+      break;
+
+    case "log":
+      appendCalLog(event.msg);
+      break;
+
+    case "cal_phase1_done":
+      appendCalLog(`Replay baseline: p5=${event.fps_p5.toFixed(1)} fps, median=${event.fps_median.toFixed(1)} fps`);
+      break;
+
+    case "cal_waiting":
+      document.getElementById("cal-phase-label").textContent = "Phase 2: Waiting for Live Session";
+      appendCalLog(event.msg);
+      break;
+
+    case "cal_phase2_start":
+      document.getElementById("cal-phase-label").textContent = "Phase 2: Collecting Live FPS";
+      document.getElementById("cal-track").textContent = event.track;
+      document.getElementById("cal-car").textContent = event.car;
+      document.getElementById("cal-collection-stats").style.display = "";
+      appendCalLog(`Live session detected: ${event.track} — ${event.car}`);
+      break;
+
+    case "cal_progress":
+      document.getElementById("cal-samples").textContent = event.sample_count;
+      document.getElementById("cal-fps-p5").textContent = event.fps_p5_so_far.toFixed(1);
+      break;
+
+    case "cal_done":
+      appendCalLog(`Calibration complete! Correction factor: ${event.correction_factor.toFixed(3)}×`);
+      appendCalLog(`Live FPS p5: ${event.live_fps_p5.toFixed(1)} vs Replay p5: ${event.replay_fps_p5.toFixed(1)}`);
+      loadCalibrationStatus();
+      resetCalUI();
+      break;
+
+    case "cal_error":
+      appendCalLog(`Error: ${event.msg}`);
+      resetCalUI();
+      break;
+
+    case "cal_aborted":
+      appendCalLog("Calibration cancelled.");
+      resetCalUI();
+      break;
+  }
+
+  if (TERMINAL.includes(event.type) && _calSSE) {
+    _calSSE.close();
+    _calSSE = null;
+  }
+}
+
+function appendCalLog(msg) {
+  const el = document.getElementById("cal-log");
+  if (!el) return;
+  el.style.display = "";
+  const ts = new Date().toLocaleTimeString("en-US", { hour12: false });
+  el.textContent += `[${ts}] ${msg}\n`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function resetCalUI() {
+  const startBtn = document.getElementById("btn-cal-start");
+  const stopBtn = document.getElementById("btn-cal-stop");
+  if (startBtn) startBtn.style.display = "";
+  if (stopBtn) stopBtn.style.display = "none";
 }

@@ -548,6 +548,48 @@ td.no-change {
   border-color: var(--accent);
 }
 
+/* ── Calibration panel ───────────────────────────────────────────────────── */
+
+.panel-calibrate-header {
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.panel-calibrate-header:hover {
+  color: var(--accent-dim);
+}
+
+.cal-arrow {
+  display: inline-block;
+  font-size: 0.75em;
+  color: var(--text-dim);
+  transition: transform 0.2s ease;
+  user-select: none;
+}
+
+#cal-collection-stats {
+  font-family: var(--font);
+  font-size: 0.82rem;
+  color: #aaa;
+  background: #111;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.5rem 0.8rem;
+  margin-top: 0.5rem;
+  line-height: 1.8;
+}
+
+#stale-cal-warning a {
+  color: #ffaa00;
+  text-decoration: underline;
+}
+
+#stale-cal-warning a:hover {
+  color: #ffcc44;
+}
+
 /* ── Scrollbar styling ───────────────────────────────────────────────────── */
 
 .log-output::-webkit-scrollbar {

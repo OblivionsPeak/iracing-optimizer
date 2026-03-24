@@ -23,6 +23,8 @@ from core.process_controller import ProcessController
 from core.fps_sampler import FPSSampler
 from core.settings import SETTINGS, SETTINGS_BY_KEY
 from core.profile_store import ProfileStore
+from core.calibration_store import CalibrationStore
+from core.live_calibrator import LiveCalibrator, CalibrationAborted, CalibrationError
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 
@@ -39,6 +41,13 @@ _event_queue = queue.Queue()
 _benchmark_thread = None
 _runner = None  # BenchmarkRunner instance (for stop signal)
 _state_lock = threading.Lock()
+
+# ── Calibration global state ───────────────────────────────────────────────────
+_cal_state = {"status": "idle", "result": None, "error": None}
+_cal_event_queue = queue.Queue()
+_calibration_thread = None
+_calibrator = None
+_cal_state_lock = threading.Lock()
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
@@ -227,6 +236,10 @@ def api_benchmark_start():
     if not mock and not replay_path.exists():
         return jsonify({"error": f"Replay file not found: {replay_path}"}), 400
 
+    # Read calibration state before starting
+    correction_factor = CalibrationStore().get_correction_factor()
+    stale_warning = CalibrationStore().get_stale_warning(ConfigManager().get_all_tunable())
+
     # Reset state
     with _state_lock:
         _state["status"] = "running"
@@ -243,13 +256,19 @@ def api_benchmark_start():
 
     _benchmark_thread = threading.Thread(
         target=_run_benchmark,
-        args=(target_fps, replay_path, mock),
+        args=(target_fps, replay_path, mock, correction_factor),
         daemon=True,
         name="benchmark-runner",
     )
     _benchmark_thread.start()
 
-    return jsonify({"status": "started", "target_fps": target_fps, "replay": str(replay_path), "mock": mock})
+    return jsonify({
+        "status": "started",
+        "target_fps": target_fps,
+        "replay": str(replay_path),
+        "mock": mock,
+        "stale_calibration_warning": stale_warning,
+    })
 
 
 @app.route('/api/benchmark/stop', methods=['POST'])
@@ -362,9 +381,137 @@ def api_benchmark_result():
     })
 
 
+# ── Calibration routes ────────────────────────────────────────────────────────
+
+@app.route('/api/calibrate/status')
+def api_calibrate_status():
+    """Returns current calibration state and stored correction factor."""
+    with _cal_state_lock:
+        status = _cal_state["status"]
+        error = _cal_state.get("error")
+    cal = CalibrationStore()
+    data = cal.load()
+    return jsonify({
+        "status": status,
+        "correction_factor": data["correction_factor"] if data and data.get("valid") else None,
+        "valid": data.get("valid") if data else None,
+        "error": error,
+        "live_fps_p5": data["live_baseline"]["fps_p5"] if data and data.get("valid") else None,
+        "replay_fps_p5": data["replay_baseline"]["fps_p5"] if data and data.get("valid") else None,
+    })
+
+
+@app.route('/api/calibrate/start', methods=['POST'])
+def api_calibrate_start():
+    """
+    Start a calibration run.
+    Body: {"replay": "path/or/filename.rpy", "mock": false}
+    Returns 409 if calibration or benchmark is already running.
+    """
+    global _calibration_thread
+
+    with _cal_state_lock:
+        if _cal_state["status"] == "running":
+            return jsonify({"error": "Calibration already running"}), 409
+
+    with _state_lock:
+        if _state["status"] == "running":
+            return jsonify({"error": "Benchmark is currently running — cannot calibrate simultaneously"}), 409
+
+    data = request.get_json(force=True, silent=True) or {}
+    replay_str = (data.get("replay") or "").strip()
+    mock = bool(data.get("mock", False))
+
+    if not replay_str:
+        return jsonify({"error": "replay is required"}), 400
+
+    replay_path = Path(replay_str)
+    if not replay_path.is_absolute():
+        replay_dir = Path.home() / "Documents" / "iRacing" / "replay"
+        replay_path = replay_dir / replay_str
+
+    if not mock and not replay_path.exists():
+        return jsonify({"error": f"Replay file not found: {replay_path}"}), 400
+
+    # Reset cal state and drain stale events
+    with _cal_state_lock:
+        _cal_state["status"] = "running"
+        _cal_state["result"] = None
+        _cal_state["error"] = None
+
+    while not _cal_event_queue.empty():
+        try:
+            _cal_event_queue.get_nowait()
+        except queue.Empty:
+            break
+
+    _calibration_thread = threading.Thread(
+        target=_run_calibration,
+        args=(replay_path, mock),
+        daemon=True,
+        name="calibration-runner",
+    )
+    _calibration_thread.start()
+
+    correction_factor_current = CalibrationStore().get_correction_factor()
+    return jsonify({
+        "status": "started",
+        "correction_factor_current": correction_factor_current,
+        "replay": str(replay_path),
+        "mock": mock,
+    })
+
+
+@app.route('/api/calibrate/stop', methods=['POST'])
+def api_calibrate_stop():
+    """Abort the running calibration."""
+    global _calibrator
+    with _cal_state_lock:
+        status = _cal_state["status"]
+
+    if status != "running":
+        return jsonify({"error": "No calibration running"}), 400
+
+    if _calibrator is not None:
+        _calibrator.stop()
+
+    with _cal_state_lock:
+        _cal_state["status"] = "aborted"
+
+    _cal_event_queue.put({"type": "cal_aborted", "msg": "Calibration aborted by user", "ts": time.time()})
+    return jsonify({"status": "aborted"})
+
+
+@app.route('/api/calibrate/stream')
+def api_calibrate_stream():
+    """
+    SSE endpoint for calibration events.
+    Terminal event types: cal_done, cal_error, cal_aborted.
+    """
+    def generate():
+        last_keepalive = time.time()
+        while True:
+            try:
+                event = _cal_event_queue.get(timeout=1.0)
+                yield f"data: {json.dumps(event)}\n\n"
+                if event.get('type') in ('cal_done', 'cal_error', 'cal_aborted'):
+                    break
+            except queue.Empty:
+                now = time.time()
+                if now - last_keepalive > 15:
+                    yield ": keepalive\n\n"
+                    last_keepalive = now
+
+    return Response(
+        generate(),
+        mimetype='text/event-stream',
+        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'},
+    )
+
+
 # ── Background benchmark thread ───────────────────────────────────────────────
 
-def _run_benchmark(target_fps: int, replay_path: Path, mock: bool):
+def _run_benchmark(target_fps: int, replay_path: Path, mock: bool, correction_factor: float = 1.0):
     """Background thread: runs the full optimization."""
     global _runner
 
@@ -385,7 +532,7 @@ def _run_benchmark(target_fps: int, replay_path: Path, mock: bool):
         # Try to import the optimizer; if not yet implemented, run a single pass
         try:
             from core.optimizer import BinarySearchOptimizer
-            optimizer = BinarySearchOptimizer(target_fps=target_fps)
+            optimizer = BinarySearchOptimizer(target_fps=target_fps, correction_factor=correction_factor)
             result = optimizer.optimize(runner, cm)
         except ImportError:
             _event_queue.put({
@@ -440,6 +587,40 @@ def _run_benchmark(target_fps: int, replay_path: Path, mock: bool):
             _event_queue.put({"type": "error", "msg": str(e), "ts": time.time()})
     finally:
         _runner = None
+
+
+# ── Background calibration thread ─────────────────────────────────────────────
+
+def _run_calibration(replay_path: Path, mock: bool):
+    """Background thread: runs the two-phase live calibration."""
+    global _calibrator
+
+    cm = ConfigManager()
+    pc = ProcessController()
+    calibrator = LiveCalibrator(
+        cm, pc, replay_path, _cal_event_queue,
+        mock_mode=mock, mock_live_fps=70.0,
+    )
+    _calibrator = calibrator
+
+    with _cal_state_lock:
+        _cal_state["status"] = "running"
+
+    try:
+        result = calibrator.run()
+        with _cal_state_lock:
+            _cal_state["status"] = "done"
+            _cal_state["result"] = result
+    except CalibrationAborted:
+        with _cal_state_lock:
+            _cal_state["status"] = "aborted"
+    except Exception as e:
+        with _cal_state_lock:
+            _cal_state["status"] = "error"
+            _cal_state["error"] = str(e)
+        _cal_event_queue.put({"type": "cal_error", "msg": str(e), "ts": time.time()})
+    finally:
+        _calibrator = None
 
 
 # ── Port helper ───────────────────────────────────────────────────────────────

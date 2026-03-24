@@ -5,6 +5,7 @@ __pycache__/
 *.pyd
 .env
 profiles/*.json
+calibration.json
 *.bak_*
 *.log
 .vscode/

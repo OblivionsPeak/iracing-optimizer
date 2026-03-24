@@ -26,6 +26,8 @@ class OptimizationResult:
     total_duration_seconds: float
     iterations_run: int
     success: bool                             # True if p5 >= target - 5
+    correction_factor: float = 1.0
+    adjusted_target_fps: int = 0
 
 
 class BinarySearchOptimizer:
@@ -45,9 +47,11 @@ class BinarySearchOptimizer:
     current_settings.
     """
 
-    def __init__(self, target_fps: int, tolerance: int = 5):
+    def __init__(self, target_fps: int, tolerance: int = 5, correction_factor: float = 1.0):
         self.target_fps = target_fps
         self.tolerance = tolerance
+        self.correction_factor = correction_factor
+        self.adjusted_target_fps = round(target_fps / correction_factor) if correction_factor > 0 else target_fps
 
     # ------------------------------------------------------------------
     # Public helpers
@@ -110,7 +114,7 @@ class BinarySearchOptimizer:
         all_results.append(result)
 
         pct = int(iteration_counter[0] / total_estimated * 100)
-        passed = result.fps_sample.passes_target(self.target_fps, self.tolerance)
+        passed = result.fps_sample.passes_target(self.adjusted_target_fps, self.tolerance)
 
         # Determine which key/value we just tested (first item in the dict)
         tested_key = next(iter(settings_dict), "")
@@ -163,7 +167,7 @@ class BinarySearchOptimizer:
         max_val = values[-1]
         runner.log(f"  [{key}] Testing MAX value: {max_val}")
         result_max = run(max_val)
-        if result_max.fps_sample.passes_target(self.target_fps, self.tolerance):
+        if result_max.fps_sample.passes_target(self.adjusted_target_fps, self.tolerance):
             runner.log(f"  [{key}] MAX value {max_val} passes — keeping max quality.")
             return max_val, local_results
 
@@ -171,7 +175,7 @@ class BinarySearchOptimizer:
         min_val = values[0]
         runner.log(f"  [{key}] MAX failed (p5={result_max.fps_sample.p5:.1f}). Testing MIN: {min_val}")
         result_min = run(min_val)
-        if not result_min.fps_sample.passes_target(self.target_fps, self.tolerance):
+        if not result_min.fps_sample.passes_target(self.adjusted_target_fps, self.tolerance):
             runner.log(
                 f"  [{key}] WARNING: Even MIN value {min_val} fails "
                 f"(p5={result_min.fps_sample.p5:.1f}). Keeping min."
@@ -192,7 +196,7 @@ class BinarySearchOptimizer:
             runner.log(f"  [{key}] Binary search: lo={values[lo]} hi={values[hi]} trying mid={mid_val}")
             result_mid = run(mid_val)
 
-            if result_mid.fps_sample.passes_target(self.target_fps, self.tolerance):
+            if result_mid.fps_sample.passes_target(self.adjusted_target_fps, self.tolerance):
                 best_idx = mid
                 lo = mid  # this value passes; can we go higher?
             else:
@@ -333,6 +337,8 @@ class BinarySearchOptimizer:
             total_duration_seconds=total_duration,
             iterations_run=iteration_counter[0],
             success=success,
+            correction_factor=self.correction_factor,
+            adjusted_target_fps=self.adjusted_target_fps,
         )
 
         result_dict = {

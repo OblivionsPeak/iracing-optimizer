@@ -55,6 +55,68 @@
         <button id="btn-start" class="btn btn-primary" onclick="startBenchmark()">
           Start Benchmark
         </button>
+        <div id="stale-cal-warning" style="display:none; color:#ffaa00; margin-top:8px; font-size:0.85em">
+          &#9888; Settings have changed since calibration. Results may be less accurate.
+          <a href="#panel-calibrate" onclick="expandCalibratePanel()" style="color:#ffaa00; text-decoration:underline;">Re-calibrate?</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Panel 1b: Calibrate ──────────────────────────────────────────── -->
+    <section class="card" id="panel-calibrate">
+      <h2 class="panel-calibrate-header" onclick="toggleCalibratePanel()" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center; margin-bottom:0; border-bottom:none;">
+        <span>Baseline Calibration</span>
+        <span class="cal-arrow" id="cal-arrow" style="font-size:0.75em; color:var(--text-dim); transition: transform 0.2s;">&#9654;</span>
+      </h2>
+      <div id="cal-panel-body" style="display:none; margin-top:1.2rem; padding-top:1rem; border-top:1px solid var(--border);">
+
+        <!-- Status line -->
+        <div id="cal-status-line" style="color:var(--text-dim); font-size:0.85rem; margin-bottom:1rem;">
+          No calibration — optimizer using replay FPS directly (correction factor: 1.0×)
+        </div>
+
+        <!-- Replay select -->
+        <div class="field-group">
+          <label for="cal-replay-select">Replay for baseline:</label>
+          <select id="cal-replay-select">
+            <option value="">Loading replays...</option>
+          </select>
+        </div>
+
+        <!-- Buttons -->
+        <div class="field-group" style="display:flex; gap:0.6rem; flex-wrap:wrap;">
+          <button id="btn-cal-start" class="btn btn-primary" onclick="startCalibration()">Start Calibration</button>
+          <button id="btn-cal-stop" class="btn btn-danger" onclick="stopCalibration()" style="display:none">Cancel</button>
+          <button id="btn-cal-clear" class="btn btn-secondary" onclick="clearCalibration()">Clear</button>
+        </div>
+
+        <!-- Phase indicator -->
+        <div id="cal-phase" style="display:none; font-size:0.85rem; color:var(--text-dim); margin-bottom:0.5rem;">
+          Phase: <span id="cal-phase-label" style="color:var(--accent);">—</span>
+        </div>
+
+        <!-- Progress during collection -->
+        <div id="cal-collection-stats" style="display:none;">
+          Session: <span id="cal-track">—</span> | Car: <span id="cal-car">—</span><br>
+          Samples: <span id="cal-samples">0</span> | Live FPS (p5 so far): <span id="cal-fps-p5">—</span>
+        </div>
+
+        <!-- Scrollable log -->
+        <div id="cal-log" class="log-output" style="display:none; margin-top:0.8rem;"></div>
+
+        <!-- How it works -->
+        <details style="margin-top:12px">
+          <summary style="cursor:pointer; color:#888">How does calibration work?</summary>
+          <p style="color:#aaa; font-size:0.85em; margin-top:8px">
+            The optimizer normally uses replay files for benchmarking because replays are repeatable.
+            However, live racing has more AI physics, network simulation, and chaos — so replay FPS
+            is typically higher than live FPS.<br><br>
+            Calibration runs a replay benchmark at your current settings, then watches your FPS during
+            a real practice session. It computes a correction factor (e.g. 0.80 = live is 80% of replay).
+            The optimizer then targets a higher replay FPS so your actual live performance hits your goal.
+          </p>
+        </details>
+
       </div>
     </section>
 
@@ -101,6 +163,13 @@
 
       <div class="results-summary" id="results-summary">
         <!-- populated by JS -->
+      </div>
+
+      <div id="result-calibration-row" style="display:none; background:#111; border:1px solid var(--border); border-radius:3px; padding:0.6rem 1rem; margin-bottom:0.5rem; font-size:0.82rem; gap:1.5rem; flex-wrap:wrap;">
+        <span class="stat-label">Calibration factor</span>
+        <span id="result-correction-factor" class="stat-value accent">1.0×</span>
+        <span class="stat-label">Replay target used</span>
+        <span id="result-adjusted-target" class="stat-value accent">—</span>
       </div>
 
       <h3>Settings Comparison</h3>
